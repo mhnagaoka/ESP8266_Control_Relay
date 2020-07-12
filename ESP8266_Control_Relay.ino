@@ -1,19 +1,65 @@
 #include <ESP8266WiFi.h>
+#include "Adafruit_MQTT.h"
+#include "Adafruit_MQTT_Client.h"
+
 #include "my_network.h"
 
-#define RELAY 0 // relay connected to  GPIO0
-#define LED 2 // relay connected to  GPIO2
+#define AIO_SERVER      "io.adafruit.com"
+#define AIO_SERVERPORT  8883               // Using port 8883 for MQTTS
+#define RELAY           0                  // relay connected to GPIO0
+#define LED             2                  // relay connected to GPIO2
 
-const char* ssid = MY_SSID; // fill in here your router or wifi SSID
-const char* password = MY_PASSWORD; // fill in here your router or wifi password
+static const char* ssid PROGMEM = MY_SSID;
+static const char* password PROGMEM = MY_PASSWORD;
+
 WiFiServer server(80);
+
+// WiFiFlientSecure for SSL/TLS support
+WiFiClientSecure secureClient;
+// Setup the MQTT client class by passing in the WiFi client and MQTT server and login details.
+Adafruit_MQTT_Client mqtt(&secureClient, AIO_SERVER, AIO_SERVERPORT, MY_AIO_USERNAME, MY_AIO_KEY);
+// io.adafruit.com SHA1 fingerprint
+static const char *fingerprint PROGMEM = "59 3C 48 0A B1 8B 39 4E 0D 58 50 47 9A 13 55 60 CC A0 1D AF";
+// Setup a feed called 'test' for publishing.
+// Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>
+Adafruit_MQTT_Publish ledStatusPub = Adafruit_MQTT_Publish(&mqtt, MY_AIO_USERNAME "/f/ledStatus");
+
 int value = -1;
+
+// Function to connect and reconnect as necessary to the MQTT server.
+// Should be called in the loop function and it will take care if connecting.
+void MQTT_connect() {
+  int8_t ret;
+
+  // Stop if already connected.
+  if (mqtt.connected()) {
+    return;
+  }
+
+  Serial.print("Connecting to MQTT... ");
+
+  uint8_t retries = 3;
+  while ((ret = mqtt.connect()) != 0) { // connect will return 0 for connected
+    Serial.println(mqtt.connectErrorString(ret));
+    Serial.println("Retrying MQTT connection in 5 seconds...");
+    mqtt.disconnect();
+    blink(900, 100, 5); // wait 5 seconds
+    retries--;
+    if (retries == 0) {
+      // basically die and wait for WDT to reset me
+      while (1);
+    }
+  }
+
+  Serial.println("MQTT Connected!");
+}
 
 int updateRelay(int newValue) {
   if (value != newValue) {
     value = newValue;
     digitalWrite(RELAY, newValue);
     digitalWrite(LED, newValue);
+    ledStatusPub.publish(newValue);
   }
   return newValue;
 }
@@ -55,8 +101,7 @@ void sendNotFound(WiFiClient *client) {
   client->println(""); //  this is a must
 }
 
-void setup()
-{
+void setup() {
   Serial.begin(115200); // must be same baudrate with the Serial Monitor
   pinMode(RELAY, OUTPUT);
   pinMode(LED, OUTPUT);
@@ -89,16 +134,22 @@ void setup()
   Serial.print("Use this URL to connect: http://");
   Serial.print(WiFi.localIP());
   Serial.println("/");
+
+  // check the fingerprint of io.adafruit.com's SSL cert
+  secureClient.setFingerprint(fingerprint);
 }
 
 // Heavily inspired by the loop from:
 // https://arduino-esp8266.readthedocs.io/en/2.7.2/esp8266wifi/server-examples.html#put-it-together
-void loop()
-{
+void loop() {
+  // Ensure the connection to the MQTT server is alive (this will make the first
+  // connection and automatically reconnect when disconnected).  See the MQTT_connect
+  // function definition further below.
+  MQTT_connect();
+
   WiFiClient client = server.available();
   // wait for a client (web browser) to connect
-  if (client)
-  {
+  if (client) {
     Serial.println("\n[Client connected]");
     String request = "";
     unsigned long start = millis();
@@ -121,14 +172,14 @@ void loop()
             updateRelay(LOW);
             sendRedirect(&client, "/");
             Serial.println("RELAY=OFF");
-            blink(100,100,1);
+            blink(100, 100, 1);
           }
           else if (request.indexOf("?r=1") >= 0)
           {
             updateRelay(HIGH);
             sendRedirect(&client, "/");
             Serial.println("RELAY=ON");
-            blink(100,100,2);
+            blink(100, 100, 2);
           } else if (request.indexOf("GET / ") >= 0) {
             Serial.println("PAGE");
             sendPage(&client);
