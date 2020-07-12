@@ -26,7 +26,7 @@ void sendPage(WiFiClient *client) {
   client->println(""); //  this is a must
   client->println("<!DOCTYPE HTML>");
   client->print("<html>");
-  client->print("<head><title>ESP8266 RELAY Control</title></head><body>");
+  client->print("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>ESP8266 RELAY Control</title></head><body>");
 
   if (value == HIGH)
   {
