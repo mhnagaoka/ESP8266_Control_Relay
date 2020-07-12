@@ -6,6 +6,7 @@
 
 #define AIO_SERVER      "io.adafruit.com"
 #define AIO_SERVERPORT  8883               // Using port 8883 for MQTTS
+#define AIO_LOOP_DELAY  250                // 250 ms
 #define RELAY           0                  // relay connected to GPIO0
 #define LED             2                  // relay connected to GPIO2
 
@@ -20,11 +21,20 @@ WiFiClientSecure secureClient;
 Adafruit_MQTT_Client mqtt(&secureClient, AIO_SERVER, AIO_SERVERPORT, MY_AIO_USERNAME, MY_AIO_KEY);
 // io.adafruit.com SHA1 fingerprint
 static const char *fingerprint PROGMEM = "59 3C 48 0A B1 8B 39 4E 0D 58 50 47 9A 13 55 60 CC A0 1D AF";
-// Setup a feed called 'test' for publishing.
 // Notice MQTT paths for AIO follow the form: <username>/feeds/<feedname>
 Adafruit_MQTT_Publish ledStatusPub = Adafruit_MQTT_Publish(&mqtt, MY_AIO_USERNAME "/f/ledStatus");
+Adafruit_MQTT_Subscribe ledCommandSub = Adafruit_MQTT_Subscribe(&mqtt, MY_AIO_USERNAME "/f/ledCommand");
 
 int value = -1;
+
+void blink(int l, int h, int c) {
+  for (int i = 0; i < c; i++) {
+    digitalWrite(LED, LOW); // Acende o Led (ativo baixo)
+    delay(l);
+    digitalWrite(LED, HIGH); // Apaga o Led
+    delay(h);
+  }
+}
 
 // Function to connect and reconnect as necessary to the MQTT server.
 // Should be called in the loop function and it will take care if connecting.
@@ -101,6 +111,22 @@ void sendNotFound(WiFiClient *client) {
   client->println(""); //  this is a must
 }
 
+void handleMQTTMessage(char *payload) {
+
+  Serial.print("received <- ");
+  Serial.println(payload);
+
+  if (strcmp(payload, "ON") == 0) {
+    updateRelay(HIGH);
+  } else if (strcmp(payload, "OFF") == 0) {
+    updateRelay(LOW);
+  } else if (strcmp(payload, "TGL") == 0) {
+    updateRelay(HIGH - value);
+  } else {
+    return;
+  }
+}
+
 void setup() {
   Serial.begin(115200); // must be same baudrate with the Serial Monitor
   pinMode(RELAY, OUTPUT);
@@ -135,8 +161,11 @@ void setup() {
   Serial.print(WiFi.localIP());
   Serial.println("/");
 
-  // check the fingerprint of io.adafruit.com's SSL cert
+  // Check the fingerprint of io.adafruit.com's SSL cert
   secureClient.setFingerprint(fingerprint);
+
+  // Subscribe to the command topic
+  mqtt.subscribe(&ledCommandSub);
 }
 
 // Heavily inspired by the loop from:
@@ -202,15 +231,20 @@ void loop() {
     delay(1); // give the web browser time to receive the data
 
     Serial.println("[Client disonnected]");
+  } else {
+    Adafruit_MQTT_Subscribe *subscription;
+    while ((subscription = mqtt.readSubscription(AIO_LOOP_DELAY))) {
+      // Check if it is the led command feed
+      if (subscription == &ledCommandSub) {
+        handleMQTTMessage((char *) ledCommandSub.lastread);
+      }
+    }
   }
   digitalWrite(LED, millis() >> 11 & 1);
-}
-
-void blink(int l, int h, int c) {
-  for (int i = 0; i < c; i++) {
-    digitalWrite(LED, LOW); // Acende o Led (ativo baixo)
-    delay(l);
-    digitalWrite(LED, HIGH); // Apaga o Led
-    delay(h);
-  }
+  if (!(millis() >> 10))
+    //    // ping the server to keep the mqtt connection alive
+    //    if (! mqtt.ping()) {
+    //      mqtt.disconnect();
+    //    }
+    Serial.println("MQTT ping");
 }
