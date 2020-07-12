@@ -14,7 +14,6 @@ int updateRelay(int newValue) {
     value = newValue;
     digitalWrite(RELAY, newValue);
     digitalWrite(LED, newValue);
-    Serial.printf("RELAY=%d\n", newValue);
   }
   return newValue;
 }
@@ -23,6 +22,7 @@ void sendPage(WiFiClient *client) {
   // Return the response
   client->println("HTTP/1.1 200 OK");
   client->println("Content-Type: text/html");
+  client->println("Connection: close");
   client->println(""); //  this is a must
   client->println("<!DOCTYPE HTML>");
   client->print("<html>");
@@ -45,11 +45,13 @@ void sendRedirect(WiFiClient *client, char *location) {
   client->println("HTTP/1.1 302");
   client->print("Location: ");
   client->println(location);
+  client->println("Connection: close");
   client->println(""); //  this is a must
 }
 
 void sendNotFound(WiFiClient *client) {
   client->println("HTTP/1.1 404");
+  client->println("Connection: close");
   client->println(""); //  this is a must
 }
 
