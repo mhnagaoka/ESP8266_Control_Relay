@@ -31,12 +31,12 @@ void sendPage(WiFiClient *client) {
   if (value == HIGH)
   {
     client->print("<p>Relay is now: ON</p>");
-    client->print("</p><p>Turn <a href=\"/?OFF\">OFF</a> RELAY</p>");
+    client->print("<form method=\"get\"><input type=\"hidden\" name=\"r\" value=\"0\"/><button>Turn off relay</button></form>");
   }
   else
   {
     client->print("<p>Relay is now: OFF</p>");
-    client->print("</p><p>Turn <a href=\"/?ON\">ON</a> RELAY</p>");
+    client->print("<form method=\"get\"><input type=\"hidden\" name=\"r\" value=\"1\"/><button>Turn on relay</button></form>");
   }
   client->println("</body></html>");
 }
@@ -104,13 +104,13 @@ void loop() {
   client.flush();
 
   // Match the request
-  if (request.indexOf("?OFF") != -1)
+  if (request.indexOf("?r=0") != -1)
   {
     updateRelay(LOW);
     Serial.println("RELAY=OFF");
     sendRedirect(&client, "/");
   }
-  else if (request.indexOf("?ON") != -1)
+  else if (request.indexOf("?r=1") != -1)
   {
     updateRelay(HIGH);
     Serial.println("RELAY=ON");
