@@ -9,11 +9,16 @@ I put this together to make some use of the ESP-01S relay modules I bought on
 There are many versions of these modules, but the ones I have (ESP-01S Relay v1.0) are actually
 bugged.
 
-In order to put them to work, you have to do a couple of things (otherwise it will refuse to run
-your code).
+In order to put them to work, I had to do a couple of things (otherwise it would refuse to run
+my code).
 
-- connect the EN (aka CH_EN/CH_PD) pin to the 3V3 PIN
-- get rid of resitor R2
+1. [connect the EN (aka CH_EN/CH_PD) pin to the 3V3 PIN](doc/add-jumper.jpeg)
+
+![connect the EN (aka CH_EN/CH_PD) pin to the 3V3 PIN](doc/add-jumper-thumb.jpeg)
+
+2. [get rid of resistor R2](doc/remove-r2.jpeg)
+
+![get rid of resistor R2](doc/remove-r2-thumb.jpeg)
 
 I struggled with this problem for quite some time, until I found this video:
 [How to fix cheap ebay ESP8266 relay module](https://youtu.be/Uq7ZfutOSSg).
@@ -40,6 +45,6 @@ should be created on the project's folder and should be like the following:
 #define MY_PASSWORD "<your wifi password>"
 ```
 
-If you are curious, I used the this thing to flash my ESP-01S:
+If you are curious, I used this thing to flash my ESP-01S:
 https://www.aliexpress.com/item/33011980079.html. It works like a charm. No jumpers or switches
 to fiddle with.
