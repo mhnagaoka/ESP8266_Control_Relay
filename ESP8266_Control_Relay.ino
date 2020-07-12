@@ -48,6 +48,11 @@ void sendRedirect(WiFiClient *client, char *location) {
   client->println(""); //  this is a must
 }
 
+void sendNotFound(WiFiClient *client) {
+  client->println("HTTP/1.1 404");
+  client->println(""); //  this is a must
+}
+
 void setup()
 {
   Serial.begin(115200); // must be same baudrate with the Serial Monitor
@@ -115,8 +120,10 @@ void loop() {
     updateRelay(HIGH);
     Serial.println("RELAY=ON");
     sendRedirect(&client, "/");
-  } else {
+  } else if (request.indexOf("GET / ") != -1) {
     sendPage(&client);
+  } else {
+    sendNotFound(&client);
   }
 
   delay(1);
