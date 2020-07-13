@@ -90,33 +90,31 @@ void sendRedirect(char *location) {
   Serial.println(location);
 }
 
-void handleHTTPRequest() {
-  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
-  for (int i = 0; i < server.args(); i++) {
-    Serial.printf(" %s=%s", server.argName(i).c_str(), server.arg(i).c_str());
-  }
-  Serial.println();
-  if (server.args() == 0) {
-    // Return the response
-    String page = "<!DOCTYPE HTML>";
-    page += "<html>";
-    page += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>ESP8266 RELAY Control</title></head><body>";
+void handleShowPage() {
+  String page = "<!DOCTYPE HTML>";
+  page += "<html>";
+  page += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>ESP8266 RELAY Control</title></head><body>";
 
-    if (value == HIGH)
-    {
-      page += "<p>Relay is now: ON</p>";
-      page += "<form method=\"get\"><input type=\"hidden\" name=\"r\" value=\"0\"/><button>Turn off relay</button></form>";
-    }
-    else
-    {
-      page += "<p>Relay is now: OFF</p>";
-      page += "<form method=\"get\"><input type=\"hidden\" name=\"r\" value=\"1\"/><button>Turn on relay</button></form>";
-    }
-    page += "</body></html>";
-    server.sendHeader("Cache-Control", "no-cache");
-    server.send(200, "text/html", page);
-    Serial.println("Send page");
-  } else if (server.args() == 1 && server.argName(0) == "r") {
+  if (value == HIGH)
+  {
+    page += "<p>Relay is now: ON</p>";
+    page += "<form method=\"post\"><input type=\"hidden\" name=\"r\" value=\"0\"/><button>Turn off relay</button></form>";
+  }
+  else
+  {
+    page += "<p>Relay is now: OFF</p>";
+    page += "<form method=\"post\"><input type=\"hidden\" name=\"r\" value=\"1\"/><button>Turn on relay</button></form>";
+  }
+  page += "</body></html>";
+  server.sendHeader("Cache-Control", "no-cache");
+  server.send(200, "text/html", page);
+  Serial.println("Send page");
+  return;
+}
+
+void handleUpdateRelay() {
+  if (server.hasArg("r")) {
+    String r = server.arg("r");
     if (server.arg(0) == "1") {
       // Relay ON
       updateRelay(HIGH, 1);
@@ -181,7 +179,8 @@ void setup() {
   Serial.println("WiFi connected");
 
   // Configure and start the server
-  server.on("/", HTTP_GET, handleHTTPRequest);
+  server.on("/", HTTP_GET, handleShowPage);
+  server.on("/", HTTP_POST, handleUpdateRelay);
   server.onNotFound(sendNotFound);
   server.begin();
   Serial.println("Server started");
