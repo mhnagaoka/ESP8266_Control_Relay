@@ -1,4 +1,5 @@
 #include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 
@@ -13,7 +14,7 @@
 static const char* ssid PROGMEM = MY_SSID;
 static const char* password PROGMEM = MY_PASSWORD;
 
-WiFiServer server(80);
+ESP8266WebServer server(80);
 
 // WiFiFlientSecure for SSL/TLS support
 WiFiClientSecure secureClient;
@@ -82,49 +83,68 @@ int updateRelay(int newValue, int publishCommand) {
   return newValue;
 }
 
-void sendPage(WiFiClient *client) {
-  // Return the response
-  client->println("HTTP/1.1 200 OK");
-  client->println("Content-Type: text/html");
-  client->println("Connection: close");
-  client->println(""); //  this is a must
-  client->println("<!DOCTYPE HTML>");
-  client->print("<html>");
-  client->print("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>ESP8266 RELAY Control</title></head><body>");
-
-  if (value == HIGH)
-  {
-    client->print("<p>Relay is now: ON</p>");
-    client->print("<form method=\"get\"><input type=\"hidden\" name=\"r\" value=\"0\"/><button>Turn off relay</button></form>");
-  }
-  else
-  {
-    client->print("<p>Relay is now: OFF</p>");
-    client->print("<form method=\"get\"><input type=\"hidden\" name=\"r\" value=\"1\"/><button>Turn on relay</button></form>");
-  }
-  client->println("</body></html>");
-  Serial.println("PAGE");
-}
-
-void sendRedirect(WiFiClient *client, char *location) {
-  client->println("HTTP/1.1 302");
-  client->print("Location: ");
-  client->println(location);
-  client->println("Connection: close");
-  client->println(""); //  this is a must
-  Serial.print("REDIRECT ");
+void sendRedirect(char *location) {
+  server.sendHeader("Location", location);
+  server.send(302);
+  Serial.print("Redirect ");
   Serial.println(location);
 }
 
-void sendNotFound(WiFiClient *client) {
-  client->println("HTTP/1.1 404");
-  client->println("Connection: close");
-  client->println(""); //  this is a must
-  Serial.println("NOT FOUND");
+void handleShowPage() {
+  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
+  Serial.println();
+  String page = "<!DOCTYPE HTML>";
+  page += "<html>";
+  page += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>ESP8266 RELAY Control</title></head><body>";
+
+  if (value == HIGH)
+  {
+    page += "<p>Relay is now: ON</p>";
+    page += "<form method=\"post\"><input type=\"hidden\" name=\"r\" value=\"0\"/><button>Turn off relay</button></form>";
+  }
+  else
+  {
+    page += "<p>Relay is now: OFF</p>";
+    page += "<form method=\"post\"><input type=\"hidden\" name=\"r\" value=\"1\"/><button>Turn on relay</button></form>";
+  }
+  page += "</body></html>";
+  server.sendHeader("Cache-Control", "no-cache");
+  server.send(200, "text/html", page);
+  Serial.println("Send page");
+  return;
+}
+
+void handleUpdateRelay() {
+  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
+  Serial.println();
+  if (server.hasArg("r")) {
+    String r = server.arg("r");
+    if (server.arg(0) == "1") {
+      // Relay ON
+      updateRelay(HIGH, 1);
+      sendRedirect("/");
+      blink(100, 100, 2);
+    } else {
+      // Relay OFF
+      updateRelay(LOW, 1);
+      sendRedirect("/");
+      blink(100, 100, 1);
+    }
+  } else {
+    server.send(400);
+    Serial.println("Wrong arguments!");
+  }
+}
+
+void sendNotFound() {
+  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
+  Serial.println();
+  server.sendHeader("Connection", "close");
+  server.send(404);
+  Serial.println("Page not found!");
 }
 
 void handleMQTTMessage(char *payload) {
-
   Serial.print("Handling MQTT message: ");
   Serial.println(payload);
 
@@ -162,7 +182,10 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
 
-  // Start the server
+  // Configure and start the server
+  server.on("/", HTTP_GET, handleShowPage);
+  server.on("/", HTTP_POST, handleUpdateRelay);
+  server.onNotFound(sendNotFound);
   server.begin();
   Serial.println("Server started");
 
@@ -189,64 +212,14 @@ void loop() {
   // function definition further below.
   MQTT_connect();
 
-  WiFiClient client = server.available();
-  // wait for a client (web browser) to connect
-  if (client) {
-    //Serial.println("\n[Client connected]");
-    String request = "";
-    unsigned long start = millis();
-    while (client.connected()) {
-      // read line by line what the client (web browser) is requesting
-      if (client.available())
-      {
-        String line = client.readStringUntil('\r');
-        if (request.length() == 0) {
-          request = line;
-        }
-        //Serial.print(line);
-        // wait for end of client's request, that is marked with an empty line
-        if (line.length() == 1 && line[0] == '\n')
-        {
-          Serial.printf("Handling HTTP request: %s\n", request.c_str());
-          // Match the request
-          if (request.indexOf("?r=0") >= 0)
-          {
-            updateRelay(LOW, 1);
-            sendRedirect(&client, "/");
-            blink(100, 100, 1);
-          }
-          else if (request.indexOf("?r=1") >= 0)
-          {
-            updateRelay(HIGH, 1);
-            sendRedirect(&client, "/");
-            blink(100, 100, 2);
-          } else if (request.indexOf("GET / ") >= 0) {
-            sendPage(&client);
-          } else {
-            sendNotFound(&client);
-          }
-          break;
-        }
-      } else {
-        // Dummy Chrome socket
-        // https://github.com/esp8266/Arduino/issues/3735
-        unsigned long elapsed = millis() - start;
-        if (elapsed > 1000) {
-          client.stop();
-          break;
-        }
-      }
-    }
-    delay(1); // give the web browser time to receive the data
+  // Handle http requests
+  server.handleClient();
 
-    //Serial.println("[Client disonnected]");
-  } else {
-    Adafruit_MQTT_Subscribe *subscription;
-    while ((subscription = mqtt.readSubscription(AIO_LOOP_DELAY))) {
-      // Check if it is the led command feed
-      if (subscription == &ledCommandSub) {
-        handleMQTTMessage((char *) ledCommandSub.lastread);
-      }
+  Adafruit_MQTT_Subscribe *subscription;
+  while ((subscription = mqtt.readSubscription(AIO_LOOP_DELAY))) {
+    // Check if it is the led command feed
+    if (subscription == &ledCommandSub) {
+      handleMQTTMessage((char *) ledCommandSub.lastread);
     }
   }
 
@@ -260,5 +233,6 @@ void loop() {
     Serial.println("MQTT ping");
   }
 
+  // Blink led as a health check
   digitalWrite(LED, millis() >> 11 & 1);
 }
