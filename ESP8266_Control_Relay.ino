@@ -1,3 +1,6 @@
+#include <Espalexa.h>
+#include <EspalexaDevice.h>
+
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include "Adafruit_MQTT.h"
@@ -26,6 +29,9 @@ static const char *fingerprint PROGMEM = "59 3C 48 0A B1 8B 39 4E 0D 58 50 47 9A
 Adafruit_MQTT_Publish ledStatusPub = Adafruit_MQTT_Publish(&mqtt, MY_AIO_USERNAME "/f/ledStatus");
 Adafruit_MQTT_Publish ledCommandPub = Adafruit_MQTT_Publish(&mqtt, MY_AIO_USERNAME "/f/ledCommand");
 Adafruit_MQTT_Subscribe ledCommandSub = Adafruit_MQTT_Subscribe(&mqtt, MY_AIO_USERNAME "/f/ledCommand");
+
+Espalexa espalexa;
+EspalexaDevice* device;
 
 unsigned long lastMqttActivity;
 int value = -1;
@@ -136,12 +142,15 @@ void handleUpdateRelay() {
   }
 }
 
-void sendNotFound() {
-  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
-  Serial.println();
-  server.sendHeader("Connection", "close");
-  server.send(404);
-  Serial.println("Page not found!");
+void handleAlexaApiOrNotFound() {
+  //if you don't know the URI, ask espalexa whether it is an Alexa control request
+  if (!espalexa.handleAlexaApiCall(server.uri(), server.arg(0))) {
+    Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
+    Serial.println();
+    server.sendHeader("Connection", "close");
+    server.send(404);
+    Serial.println("Page not found!");
+  }
 }
 
 void handleMQTTMessage(char *payload) {
@@ -156,6 +165,18 @@ void handleMQTTMessage(char *payload) {
     updateRelay(HIGH - value, 1);
   } else {
     return;
+  }
+}
+
+void handleAlexaUpdateRelay(uint8_t brightness) {
+  if (brightness) {
+    updateRelay(HIGH, 1);
+    Serial.print("Device Luz changed to ON, brightness ");
+    Serial.println(brightness);
+  }
+  else  {
+    updateRelay(LOW, 1);
+    Serial.println("Device Luz changed to OFF");
   }
 }
 
@@ -182,18 +203,6 @@ void setup() {
   Serial.println("");
   Serial.println("WiFi connected");
 
-  // Configure and start the server
-  server.on("/", HTTP_GET, handleShowPage);
-  server.on("/", HTTP_POST, handleUpdateRelay);
-  server.onNotFound(sendNotFound);
-  server.begin();
-  Serial.println("Server started");
-
-  // Print the IP address
-  Serial.print("Use this URL to connect: http://");
-  Serial.print(WiFi.localIP());
-  Serial.println("/");
-
   // Check the fingerprint of io.adafruit.com's SSL cert
   secureClient.setFingerprint(fingerprint);
 
@@ -202,10 +211,25 @@ void setup() {
 
   MQTT_connect();
   updateRelay(LOW, 1);
+
+  // Configure and start the server
+  server.on("/", HTTP_GET, handleShowPage);
+  server.on("/", HTTP_POST, handleUpdateRelay);
+  server.onNotFound(handleAlexaApiOrNotFound);
+  // server.begin(); //omit this since it will be done by espalexa.begin(&server)
+
+  // Configure Alexa support
+  device = new EspalexaDevice("Luz", handleAlexaUpdateRelay); //you can also create the Device objects yourself like here
+  espalexa.addDevice(device); //and then add them
+  espalexa.begin(&server);
+
+  // Print the IP address
+  Serial.println("Server started");
+  Serial.print("Use this URL to connect: http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/");
 }
 
-// Heavily inspired by the loop from:
-// https://arduino-esp8266.readthedocs.io/en/2.7.2/esp8266wifi/server-examples.html#put-it-together
 void loop() {
   // Ensure the connection to the MQTT server is alive (this will make the first
   // connection and automatically reconnect when disconnected).  See the MQTT_connect
@@ -213,7 +237,8 @@ void loop() {
   MQTT_connect();
 
   // Handle http requests
-  server.handleClient();
+  //server.handleClient() //you can omit this line from your code since it will be called in espalexa.loop()
+  espalexa.loop();
 
   Adafruit_MQTT_Subscribe *subscription;
   while ((subscription = mqtt.readSubscription(AIO_LOOP_DELAY))) {
