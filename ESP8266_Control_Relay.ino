@@ -91,6 +91,8 @@ void sendRedirect(char *location) {
 }
 
 void handleShowPage() {
+  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
+  Serial.println();
   String page = "<!DOCTYPE HTML>";
   page += "<html>";
   page += "<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>ESP8266 RELAY Control</title></head><body>";
@@ -113,6 +115,8 @@ void handleShowPage() {
 }
 
 void handleUpdateRelay() {
+  Serial.printf("Handling HTTP %d: %s", server.method(), server.uri().c_str());
+  Serial.println();
   if (server.hasArg("r")) {
     String r = server.arg("r");
     if (server.arg(0) == "1") {
